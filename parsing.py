@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import random
 import re
 import urllib.parse
-from config import zapret1, zapret2
+from config import z
 
 def get_enhanced_headers():
     """Генерирует улучшенные заголовки для обхода защиты"""
@@ -86,6 +86,7 @@ def extract_links_from_text(text):
     ]
 
     links = []
+
     for pattern in patterns:
         found = re.findall(pattern, text, re.IGNORECASE)
         links.extend(found)
@@ -108,7 +109,7 @@ def get_yandex_disk_links(url):
 
         filtered_links = []
         for link in fixed_links:
-            if "XXXL" in link and zapret1 not in link and zapret2 not in link:
+            if "XXXL" in link and link != z :
                 filtered_links.append(link)
 
         if filtered_links:
@@ -129,4 +130,3 @@ if __name__ == "__main__":
     test_url = 'https://disk.yandex.ru/d/XxomzufLFsEapQ'
     result = get_yandex_disk_links(test_url)
     print("Результат:", result)
-
