@@ -109,7 +109,7 @@ def get_yandex_disk_links(url):
 
         filtered_links = []
         for link in fixed_links:
-            if "XXXL" in link and link != z :
+            if "XXXL" in link and z not in link:
                 filtered_links.append(link)
 
         if filtered_links:
