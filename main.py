@@ -5,14 +5,16 @@ import time
 import threading
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, InputMediaPhoto, FSInputFile
+from aiogram.types import Message, InputMediaPhoto
+from aiogram.types import FSInputFile
 from aiogram.utils.media_group import MediaGroupBuilder
 from config import TOKEN, ZVONKI, PROXY
-from parsing import get_yandex_disk_links
+from parsing import result
 import logging
 import datetime
-print("Bot запущен")
-
+from pathlib import Path
+import aiohttp
+import aiofiles
 
 if PROXY:
     from aiogram.client.session.aiohttp import AiohttpSession
@@ -24,12 +26,6 @@ else:
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-disk_url = 'https://disk.yandex.ru/d/XxomzufLFsEapQ'
-
-
-filtered_links = get_yandex_disk_links(disk_url)
-
-
 
 
 @dp.message(Command("start", "help"))
@@ -39,38 +35,54 @@ async def cmd_start(message: Message):
     await message.answer('Как пользоваться?\n/help - помощь\n/timetable - расписание уроков(сегодня и завтра)\n/bells - расписание звонков\n\nВы можете добавить qwerty в группу и он будет реагировать на слово "расписание" в вашем сообщении!')
     with open('users.txt', 'a', encoding='utf-8') as file:
         file.write(f"{message.from_user.username}, help\n")
-    print(message.from_user.username)
-
+    logger.info(f"User: {message.from_user.username}")
 
 @dp.message(F.text.lower().contains("расписание"))
 async def main_handler(message: Message):
     media_group = MediaGroupBuilder()
 
-    with open('users.txt', 'a', encoding='utf-8') as file:
-        file.write(f"{message.from_user.username} расписание\n")
-    if len(filtered_links) == 0:
-        await message.answer("Расписания на сегодня и завтра нет")
 
-    elif len(filtered_links) == 1:
-        media_group.add_photo(media=filtered_links[0])
+
+    if len(result) == 0:
+        await message.answer("Расписания на сегодня и завтра нет")
+    elif len(result) == 1:
+        media_group.add_photo(media=result[0])
         await message.reply_media_group(media=media_group.build())
     else:
-        media_group.add_photo(media=filtered_links[0])
-        media_group.add_photo(media=filtered_links[1])
+        media_group.add_photo(media=result[0])
+        media_group.add_photo(media=result[1])
         await message.reply_media_group(media=media_group.build())
 
 
 
+@dp.message(Command("bells", "zvonok", "zvonki", "z", "zov"))
+async def handle_bells(message: Message):
+    logger.info(f"🚨 /bells от @{message.from_user.username}")
+
+
+    file_path = Path("/home/artemfres/bot/bells.jpg")
+
+
+    if not file_path.exists():
+        logger.error(f"ФАЙЛ НЕ НАЙДЕН! Проверьте путь: {file_path}")
+
+        logger.info(f"Текущая директория: {Path.cwd()}")
+        logger.info(f"Содержимое текущей директории: {list(Path.cwd().iterdir())}")
+        await message.answer("❌ Файл не найден по указанному пути")
+        return
+
+
+    try:
+        photo = FSInputFile(str(file_path))  # Преобразуем Path в строку
+        await message.reply_photo(
+            photo=photo)
+        logger.info(f"✅ Фото отправлено успешно!")
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки: {e}")
 
 
 
-
-@dp.message(Command('zvonok', "z", "zov", "zvonki", "bells"))
-async def z(message: Message):
-    photo = FSInputFile(ZVONKI)
-    with open('users.txt', 'a', encoding='utf-8') as file:
-        file.write(f"{message.from_user.username} звонки\n")
-    await message.reply_photo(photo=photo)
 
 
 
@@ -78,52 +90,34 @@ async def z(message: Message):
 async def timetable_handler(message: Message):
     media_group = MediaGroupBuilder()
 
-
-    with open('users.txt', 'a', encoding='utf-8') as file:
-        file.write(f"{message.from_user.username} расписание\n")
-
-    if len(filtered_links) == 0:
+    if len(result) == 0:
         await message.answer("Расписания на сегодня и завтра нет")
-
-    elif len(filtered_links) == 1:
-        media_group.add_photo(media=filtered_links[0])
+    elif len(result) == 1:
+        media_group.add_photo(media=result[0])
         await message.reply_media_group(media=media_group.build())
     else:
-        media_group.add_photo(media=filtered_links[0])
-        media_group.add_photo(media=filtered_links[1])
+        media_group.add_photo(media=result[0])
+        media_group.add_photo(media=result[1])
         await message.reply_media_group(media=media_group.build())
 
+# Функции для вебхука
+async def set_webhook_async():
 
-
-
-
-async def schedule_daily_restart():
-    while True:
-        now = datetime.datetime.now()
-        target_time = now.replace(hour=8, minute=0, second=0, microsecond=0)
-
-        if now > target_time:
-            target_time += datetime.timedelta(days=1)
-
-        wait_seconds = (target_time - now).total_seconds()
-
-        logger.info(f"Следующая перезагрузка через {wait_seconds} секунд в 12:00")
-        await asyncio.sleep(wait_seconds)
-
-        logger.info("Перезагружаю бота в 12:00...")
-        python = sys.executable
-        os.execv(python, [python] + sys.argv)
-
-async def main():
-
-    restart_task = asyncio.create_task(schedule_daily_restart())
+    webhook_url = f"https://artemfres.pythonanywhere.com/webhook"
 
     try:
-        await dp.start_polling(bot, skip_updates=True)
+        await bot.set_webhook(
+            url=webhook_url,
+            drop_pending_updates=True
+        )
+        logger.info(f"✅ Webhook установлен: {webhook_url}")
+        return True
     except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
-    finally:
-        restart_task.cancel()
+        logger.error(f"❌ Ошибка установки webhook: {e}")
+        return False
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def set_webhook_sync():
+
+    return asyncio.run(set_webhook_async())
+
+#
